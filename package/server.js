@@ -1,6 +1,7 @@
 /* global Package */
 import { mochaInstance } from 'meteor/meteortesting:mocha-core';
 import { startBrowser } from 'meteor/meteortesting:browser-tests';
+import { onMessage } from 'meteor/inter-process-messaging';
 
 import fs from 'fs';
 
@@ -25,6 +26,7 @@ const { grep, invert, reporter, serverReporter, serverOutput, clientOutput } = m
 // logging in real time after that if client tests are still running.
 
 let serverTestsDone = false;
+let clientTestsRunning = false;
 const clientLines = [];
 function clientLogBuffer(line) {
   if (serverTestsDone) {
@@ -122,6 +124,11 @@ function serverTests(cb) {
 }
 
 function clientTests() {
+  if (clientTestsRunning) {
+    console.log('CLIENT TESTS ALREADY RUNNING');
+    return;
+  }
+
   if (!runnerOptions.runClient) {
     console.log('SKIPPING CLIENT TESTS BECAUSE TEST_CLIENT=0');
     exitIfDone('client', 0);
@@ -136,6 +143,7 @@ function clientTests() {
   }
 
   printHeader('CLIENT');
+  clientTestsRunning = true;
 
   startBrowser({
     stdout(data) {
@@ -160,6 +168,7 @@ function clientTests() {
       }
     },
     done(failureCount) {
+      clientTestsRunning = false;
       if (typeof failureCount !== 'number') {
         console.log('The browser driver package did not return a failure count for server tests as expected');
         exitIfDone('client', 1);
@@ -188,3 +197,13 @@ function start() {
 }
 
 export { start };
+
+onMessage('client-refresh', (options) => {
+  console.log('CLIENT TESTS RESTARTING (client-refresh)', options === undefined ? '' : options);
+  clientTests()
+});
+
+onMessage('webapp-reload-client', (options) => {
+  console.log('CLIENT TESTS RESTARTING (webapp-reload-client)', options === undefined ? '' : options);
+  clientTests()
+});
